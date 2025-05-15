@@ -54,16 +54,17 @@ local function OnHandshakeResponseEvent(context, source, headers)
   wsLog(log)
 end
 
-local function OnFrameEvent(context, source, packet)
+local function OnFrameEvent(context, source, frame)
   local log
-  if (packet.up == "up") then
+  local packet = frame.packet
+  if frame.up then
     log = format('['.._M._PROTOCOL .. "] %s:%s sent \t\t[%s]   %s\r\n",
       source.ctx.clientIP, source.ctx.clientPort, 
-      packet.type, packet.payload)
+      packet.opcode, packet.payload)
   else
     log = format('['.._M._PROTOCOL .. "] received from %s:%s \t[%s]   %s\r\n",
       source.ctx.srvIP, source.ctx.srvPort,
-      packet.type, packet.payload)
+      packet.opcode, packet.payload)
   end
 
   logger.dbg("[" .. _M._PROTOCOL .. " ] ", log)

@@ -5,7 +5,6 @@ local extends=tableUtils.extends
 local orderTable=tableUtils.OrderedTable
 local bit = require "bit"
 local ffi = require "ffi"
-local zlib = require("zlib")
 
 local byte = string.byte
 local char = string.char
@@ -58,7 +57,8 @@ _M.Base = {
     self.opcode = band(fst, 0x0f)
     self.fin = band(fst, 0x80) ~= 0
     self.mask = band(snd, 0x80) ~= 0
-    
+    self.rsv1 = band(fst, 0x40) ~= 0
+
     if self.mask then
       local payload_len = #data - 4
       -- TODO string.buffer optimizations

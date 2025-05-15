@@ -20,9 +20,10 @@ _M._PROTOCOL ='ws'
 
 local protocolPacket=require ("strmproxy.".. _M._PROTOCOL .. ".packets")
 
-function _M.new(self)
+function _M.new(self, handshake_request)
   local o = setmetatable({},{__index=self})
   o.c2p_stage = "INIT"
+  o.c2p_handshake_request = handshake_request
   o.p2s_stage = "INIT"
 
   o.HandshakeRequestEvent=event:newReturnEvent(o,"HandshakeRequestEvent")
@@ -33,18 +34,18 @@ function _M.new(self)
   local parser=require ("strmproxy.".. _M._PROTOCOL ..".parser"):new()
   
   o.C2PParser = parser.C2PParser
-  o.C2PParser.events.TextEvent:addHandler(o, self.OnUpTextEvent)
-  o.C2PParser.events.BinaryEvent:addHandler(o, self.OnUpBinaryEvent)
-  o.C2PParser.events.CloseEvent:addHandler(o, self.OnUpCloseEvent)
-  o.C2PParser.events.PingEvent:addHandler(o, self.OnUpPingEvent)
-  o.C2PParser.events.PongEvent:addHandler(o, self.OnUpPongEvent)
+  o.C2PParser.events.TextEvent:addHandler(o, self.OnUploadEvent)
+  o.C2PParser.events.BinaryEvent:addHandler(o, self.OnUploadEvent)
+  o.C2PParser.events.CloseEvent:addHandler(o, self.OnUploadEvent)
+  o.C2PParser.events.PingEvent:addHandler(o, self.OnUploadEvent)
+  o.C2PParser.events.PongEvent:addHandler(o, self.OnUploadEvent)
 
   o.S2PParser = parser.S2PParser
-  o.S2PParser.events.TextEvent:addHandler(o, self.OnDownTextEvent)
-  o.S2PParser.events.BinaryEvent:addHandler(o, self.OnDownBinaryEvent)
-  o.S2PParser.events.CloseEvent:addHandler(o, self.OnDownCloseEvent)
-  o.S2PParser.events.PingEvent:addHandler(o, self.OnDownPingEvent)
-  o.S2PParser.events.PongEvent:addHandler(o, self.OnDownPongEvent)
+  o.S2PParser.events.TextEvent:addHandler(o, self.OnDownloadEvent)
+  o.S2PParser.events.BinaryEvent:addHandler(o, self.OnDownloadEvent)
+  o.S2PParser.events.CloseEvent:addHandler(o, self.OnDownloadEvent)
+  o.S2PParser.events.PingEvent:addHandler(o, self.OnDownloadEvent)
+  o.S2PParser.events.PongEvent:addHandler(o, self.OnDownloadEvent)
 
   return o
 end
@@ -148,44 +149,12 @@ local function readHandshakeResponse(self, sock)
 end
 
 ---------------parser event handlers----------------------
-function _M:OnUpTextEvent(source, packet, up)
-  self.FrameEvent:trigger({type="text", payload=packet.payload, up="up"}, self.ctx)
+function _M:OnUploadEvent(source, packet)
+  self.FrameEvent:trigger({packet=packet, up=true}, self.ctx)
 end
 
-function _M:OnUpBinaryEvent(source, packet, up)
-  self.FrameEvent:trigger({type="binary", payload=packet.payload, up="up"}, self.ctx)
-end
-
-function _M:OnUpCloseEvent(source, packet, up)
-  self.FrameEvent:trigger({type="close", payload=packet.payload, up="up"}, self.ctx)
-end 
-
-function _M:OnUpPingEvent(source, packet, up)
-  self.FrameEvent:trigger({type="ping", payload=packet.payload, up="up"}, self.ctx)
-end
-
-function _M:OnUpPongEvent(source, packet, up)
-  self.FrameEvent:trigger({type="pong", payload=packet.payload, up="up"}, self.ctx)
-end
-
-function _M:OnDownTextEvent(source, packet, up)
-  self.FrameEvent:trigger({type="text", payload=packet.payload, up="down"}, self.ctx)
-end
-
-function _M:OnDownBinaryEvent(source, packet, up)
-  self.FrameEvent:trigger({type="binary", payload=packet.payload, up="down"}, self.ctx)
-end
-
-function _M:OnDownCloseEvent(source, packet, up)
-  self.FrameEvent:trigger({type="close", payload=packet.payload, up="down"}, self.ctx)
-end 
-
-function _M:OnDownPingEvent(source, packet, up)
-  self.FrameEvent:trigger({type="ping", payload=packet.payload, up="down"}, self.ctx)
-end
-
-function _M:OnDownPongEvent(source, packet, up)
-  self.FrameEvent:trigger({type="pong", payload=packet.payload, up="down"}, self.ctx)
+function _M:OnDownloadEvent(source, packet)
+  self.FrameEvent:trigger({packet=packet, up=false}, self.ctx)
 end
 
 ---------------receive and parse packet----------------------
@@ -324,14 +293,21 @@ end
 
 function _M.processUpRequest(self)
 
-  if (self.c2p_stage == "INIT") then
+  if self.c2p_stage == "INIT" then
 
-    logger.dbg("Websocket>: readHandshakeRequest()")
-    local allBytes, handshake, err = readHandshakeRequest(self, self.channel.c2pSock)
-    if err then
-      logger.err("Websocket>: -- Failed to read handshake request: ", err)
-      return nil,err
+    local allBytes, handshake, err
+    
+    if self.c2p_handshake_request then
+      allBytes = self.c2p_handshake_request
+      handshake = parse_handshake(allBytes)
+    else
+      allBytes, handshake, err = readHandshakeRequest(self, self.channel.c2pSock)
+      if err then
+        logger.err("Websocket>: -- Failed to read handshake request: ", err)
+        return nil,err
+      end
     end
+    logger.dbg("Websocket>: readHandshakeRequest()")
     self.c2p_stage = "HANDSHAKE"
     self.HandshakeRequestEvent:trigger(handshake, self.ctx)
     return allBytes
@@ -360,7 +336,7 @@ end
 
 function _M.processDownRequest(self)
 
-  if (self.p2s_stage == "INIT") then
+  if self.p2s_stage == "INIT" then
 
     logger.dbg("Websocket>: readHandshakeResponse()")
     local allBytes, handshake, err = readHandshakeResponse(self, self.channel.p2sSock)
